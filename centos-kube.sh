@@ -40,6 +40,9 @@ get_nodes () {
         read ip
         hosts="$hosts $hostname/$ip"
     done
+
+    # Strip preceding space
+    hosts=`echo $hosts`
 }
 
 
@@ -113,7 +116,26 @@ install_kubernetes () {
     systemctl enable docker && systemctl enable kubelet
 }
 
-echo $argv
+build_hosts () {
+    # Create a temp file to work with
+    tmphosts=$(mktemp /tmp/centos-kube_hosts.XXXXXX)
+
+    # Prevent duplicate entries by filtering out hosts that match the ones being added
+    regex=`echo "$1|\# kubernetes hosts" | sed -e 's/\/[0-9\.]\+ /|/g'`
+    egrep -v "$regex" /etc/hosts > $tmphosts
+
+    # Populate hosts file with kubernetes nodes
+    echo "# kubernetes hosts" >> $tmphosts
+    for host in $1
+    do
+        hostname=$(echo $host | cut -d'/' -f1)
+        ip=$(echo $host | cut -d'/' -f2)
+        echo "$ip	$hostname" >> $tmphosts
+    done
+    echo
+    cat $tmphosts > /etc/hosts
+    rm -f $tmphosts
+}
 while [ $confirmed -ne 1 ]
 do
     verify_master_node
@@ -121,10 +143,23 @@ do
     confirm
 done
 
-exit
 disable_selinux
 enable_bridging
 disable_swap
 install_kubernetes
-update_hosts
+build_hosts "$master_hostname/$master_ip $hosts"
 
+for host in $hosts
+do
+    hostname=$(echo $host | cut -d'/' -f1)
+    ip=$(echo $host | cut -d'/' -f2)
+    echo "$ip	$hostname"
+    ssh $ip <<- EOF
+        $(declare -f)
+        disable_selinux
+        enable_bridging
+        disable_swap
+        install_kubernetes
+        build_hosts "$master_hostname/$master_ip $hosts"
+EOF
+done
