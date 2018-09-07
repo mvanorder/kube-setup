@@ -4,7 +4,7 @@
 master_hostname=`hostname`
 master_ip=`ip addr | egrep -v "lo:|127.0.0.1|::1" | egrep "^[0-9]:|inet"|head -n2|awk '/inet/{print $2}'|cut -d'/' -f1`
 hosts=""
-
+overlay_cidr="10.244.0.0/16"
 
 verify_master_node () {
     echo -n "Master node hostname($master_hostname): "
@@ -63,6 +63,7 @@ confirm () {
         echo "Node $i IP: $ip"
         i=$((i+1))
     done
+    echo "Overlay network CIDR: $overlay_cidr"
     echo
     confirmation=''
     while [ "$confirmation" == "" ]
@@ -140,6 +141,12 @@ while [ $confirmed -ne 1 ]
 do
     verify_master_node
     get_nodes
+    echo -n "Enter overlay network CIDR ($overlay_cidr):"
+    read cidr
+    if [ "$cidr" != "" ]
+    then
+        overlay_cidr=$cidr
+    fi
     confirm
 done
 
@@ -163,3 +170,5 @@ do
         build_hosts "$master_hostname/$master_ip $hosts"
 EOF
 done
+
+kubeadm init --pod-network-cidr=$overlay_cidr
